@@ -36,7 +36,7 @@ The goal is to provide a local or development environment to run Magento 2 with 
 - Install [Docker](https://docs.docker.com/engine/install/)
 - Suitable hardware (see Magento/Adobe recommended [hardware guidance](https://experienceleague.adobe.com/en/docs/commerce-operations/performance-best-practices/hardware))
 - Internet access to pull images and Composer dependencies
-- Inform your keys in instance/store/magento/auth.json obtained from Adobe
+- Inform your keys in `instance/store/magento/auth.json` obtained from Adobe
 
 ## Repository structure
 
