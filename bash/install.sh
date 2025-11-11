@@ -453,5 +453,5 @@ docker exec -it $DOCKER_CONTAINER_NAME bash -c "
     --admin-lastname=$MAGENTO_LASTNAME
 "
 
-echo -e "${GREEN}✅ 安装完成！您可以通过 $MAGENTO_HOST:$MAGENTO_PORT 访问您的Magento商店${NC}"
-echo -e "${GREEN}管理员地址：$MAGENTO_HOST:$MAGENTO_PORT/admin${NC}"
+echo -e "${GREEN}✅ 安装完成！您可以通过 $MAGENTO_SHOPURI 访问您的Magento商店${NC}"
+echo -e "${GREEN}管理员地址：$MAGENTO_SHOPURI/admin${NC}"
