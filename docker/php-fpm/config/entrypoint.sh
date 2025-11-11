@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Start the cron
+# 启动cron服务
 cron start
 
-# Exec. default command (php-fpm)
+# 执行默认命令（php-fpm）
 exec "$@"
