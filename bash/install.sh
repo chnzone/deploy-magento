@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Carrega variáveis do .env
 set -o allexport
-source ../infrastructure/.env
+source ./infrastructure/.env
 set +o allexport
 
 # Cores para o Console
@@ -19,9 +19,9 @@ DOCKER_MYSQL_NAME='magento-mysql'
 DOCKER_ELASTICSEARCH_NAME='magento-elasticsearch'
 DOCKER_REDIS_NAME='magento-redis'
 DOCKER_REBBITMQ_NAME='magento-rabbitmq'
-MAGENTO_PATH='../instance/store/magento'
-DOCKER_COMPOSE_SHARED_FILE="../infrastructure/docker-compose.shared.yml"
-DOCKERFILE_PHP_FPM_FILE="../infrastructure/php-fpm/Dockerfile"
+MAGENTO_PATH='./instance/store/magento'
+DOCKER_COMPOSE_SHARED_FILE="./infrastructure/docker-compose.shared.yml"
+DOCKERFILE_PHP_FPM_FILE="./infrastructure/php-fpm/Dockerfile"
 
 echo "
     ____              __          __ __   __  ___                            __       
@@ -44,7 +44,7 @@ if [ ! -f "$DOCKER_COMPOSE_SHARED_FILE" ] || [ ! -f "$DOCKERFILE_PHP_FPM_FILE" ]
     exit 1
 fi
 
-docker build -t magento-php:8.4-custom -f $DOCKERFILE_PHP_FPM_FILE ../infrastructure/php-fpm
+docker build -t magento-php:8.4-custom -f $DOCKERFILE_PHP_FPM_FILE ./infrastructure/php-fpm
 
 echo -e "✅ ${GREEN}Spinning up shared containers with Docker Compose...${NC}"
 docker compose -f "$DOCKER_COMPOSE_SHARED_FILE" up -d
