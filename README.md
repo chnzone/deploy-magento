@@ -1,55 +1,55 @@
 ## deploy-magento
 
-This repository contains a Docker-based docker to install and run a Magento 2 (Community Edition) source in containers. The project organizes shared services (MySQL, Redis, Elasticsearch, RabbitMQ, Nginx, Varnish, and a PHP-FPM application container) and includes bash and configuration to simplify Magento installation.
+本仓库包含一个基于Docker的部署方案，用于在容器中安装和运行Magento 2（社区版）。该项目组织了共享服务（MySQL、Redis、Elasticsearch、RabbitMQ、Nginx、Varnish和PHP-FPM应用容器），并包含bash脚本和配置以简化Magento安装。
 
-This README documents the repository purpose, prerequisites, how to configure environment variables, main docker-compose components, the installation script, and maintenance/troubleshooting tips.
+本README文档说明了仓库的用途、先决条件、如何配置环境变量、主要的docker-compose组件、安装脚本以及维护/故障排除提示。
 
-## Table of contents
+## 目录
 
-- [Overview](#overview)
-- [Prerequisites](#prerequisites)
-- [Repository structure](#repository-structure)
-- [Configuration - Environment variables](#configuration---environment-variables)
-- [How to use](#how-to-use)
-	- [Initial preparation](#initial-preparation)
-	- [Automatic installation (script)](#automatic-installation-script)
-- [Services description](#services-description)
-- [PHP-FPM Dockerfile summary](#php-fpm-dockerfile-summary)
-- [Best practices and permissions](#best-practices-and-permissions)
-- [Backups and persistence](#backups-and-persistence)
+- [概述](#概述)
+- [先决条件](#先决条件)
+- [仓库结构](#仓库结构)
+- [配置 - 环境变量](#配置---环境变量)
+- [使用方法](#使用方法)
+  - [初始准备](#初始准备)
+  - [自动安装（脚本）](#自动安装脚本)
+- [服务说明](#服务说明)
+- [PHP-FPM Dockerfile摘要](#php-fpm-dockerfile摘要)
+- [最佳实践和权限](#最佳实践和权限)
+- [备份和持久化](#备份和持久化)
 
-## Overview
+## 概述
 
-The goal is to provide a local or development environment to run Magento 2 with common dependencies pre-configured in containers. The repository centralizes configuration for:
+目标是提供一个本地或开发环境，通过预配置的容器运行Magento 2。该仓库集中配置了：
 
-- MySQL database
-- Cache and session (Redis)
-- Search (Elasticsearch)
-- Messaging (RabbitMQ)
-- Reverse proxy / SSL / manager (Nginx Proxy Manager)
-- Web server (Nginx)
-- HTTP cache (Varnish)
-- PHP application container (PHP-FPM) with Composer and entrypoint bash
+- MySQL数据库
+- 缓存和会话（Redis）
+- 搜索（Elasticsearch）
+- 消息队列（RabbitMQ）
+- 反向代理/SSL/管理器（Nginx Proxy Manager）
+- Web服务器（Nginx）
+- HTTP缓存（Varnish）
+- PHP应用容器（PHP-FPM），带有Composer和入口点bash脚本
 
-## Prerequisites
+## 先决条件
 
-- Install [Docker](https://docs.docker.com/engine/install/)
-- Suitable hardware (see Magento/Adobe recommended [hardware guidance](https://experienceleague.adobe.com/en/docs/commerce-operations/performance-best-practices/hardware))
-- Internet access to pull images and Composer dependencies
-- Inform your keys in `source/store/magento/auth.json` obtained from Adobe
+- 安装[Docker](https://docs.docker.com/engine/install/)
+- 合适的硬件（参见Magento/Adobe推荐的[硬件指南](https://experienceleague.adobe.com/en/docs/commerce-operations/performance-best-practices/hardware)）
+- 互联网访问，用于拉取镜像和Composer依赖
+- 在`source/store/magento/auth.json`中填入从Adobe获取的密钥
 
-## Repository structure
+## 仓库结构
 
-- `docker/docker-compose.shared.yml` - compose file for shared services
-- `docker/php-fpm/` - Dockerfile, configuration and entrypoint for the PHP-FPM container
-- `docker/nginx/` - Nginx configuration files
-- `docker/mysql/conf.d/` - custom MySQL configuration
-- `source/store/magento/` - Magento source code (from Magento project)
-- `bash/install.sh` - script that automates build, deploy and initial Magento installation
+- `docker/docker-compose.shared.yml` - 共享服务的compose文件
+- `docker/php-fpm/` - PHP-FPM容器的Dockerfile、配置和入口点
+- `docker/nginx/` - Nginx配置文件
+- `docker/mysql/conf.d/` - 自定义MySQL配置
+- `source/store/magento/` - Magento源代码（来自Magento项目）
+- `bash/install.sh` - 自动化构建、部署和初始Magento安装的脚本
 
-## Configuration - Environment variables
+## 配置 - 环境变量
 
-The project loads environment variables from a `.env` file (located at `docker/.env`) when executed via the script. Expected variables include (but are not limited to):
+通过脚本执行时，项目从`.env`文件（位于`docker/.env`）加载环境变量。预期的变量包括（但不限于）：
 
 - MYSQL_ROOT_PASSWORD, MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD
 - MAGENTO_HOST, MAGENTO_PORT
@@ -58,71 +58,33 @@ The project loads environment variables from a `.env` file (located at `docker/.
 - NGINX_PROXY_ADMIN_USER_EMAIL, NGINX_PROXY_MANAGER_ADMIN_PASSWORD
 - MAGENTO_ADMIN_USER, MAGENTO_ADMIN_PASSWORD, MAGENTO_ADMIN_EMAIL, MAGENTO_FIRSTNAME, MAGENTO_LASTNAME
 
-Note: if the file does not exist, create `docker/.env` based on variables used in `docker-compose.shared.yml` and `bash/install.sh`. Some variables have defaults defined in `docker-compose.shared.yml`.
+注意：如果该文件不存在，请根据`docker-compose.shared.yml`和`bash/install.sh`中使用的变量创建`docker/.env`。有些变量在`docker-compose.shared.yml`中定义了默认值。
 
-## How to use
+## 使用方法
 
-### Initial preparation
+### 初始准备
 
-1. Copy/edit the environment file:
+1. 复制/编辑环境文件：
 
-	 - Create `docker/.env` and set required variables (MySQL password, Magento host/port to expose, admin credentials, etc.).
+   - 创建`docker/.env`并设置必要的变量（MySQL密码、要暴露的Magento主机/端口、管理员凭据等）。
 
-2. Ensure Magento source code is present at `source/store/magento`. This repository includes the Magento structure (`composer.json` is present). If dependencies are not installed, the `install.sh` script will run `composer install` inside the container.
+2. 确保Magento源代码存在于`source/store/magento`。本仓库包含Magento结构（`composer.json`已存在）。如果依赖未安装，`install.sh`脚本将在容器内运行`composer install`。
 
-3. Adjust local file permissions if necessary (on Linux you might need to ensure your user has read/write access for the folders mounted as volumes).
+3. 必要时调整本地文件权限（在Linux上，您可能需要确保您的用户对挂载为卷的文件夹有读写权限）。
 
-### Automatic installation (script)
+### 自动安装（脚本）
 
-The main installation script is `bash/install.sh`. It performs the following high-level steps:
+主要的安装脚本是`bash/install.sh`。它执行以下高级步骤：
 
-- Loads variables from `docker/.env`.
-- Builds the custom PHP-FPM image defined in `docker/php-fpm/Dockerfile` (tag `magento-php:8.4-custom`).
-- Brings up the shared services with `docker compose -f docker/docker-compose.shared.yml up -d`.
-- Executes inside the `magento-store` container the commands: `composer install`, `bin/magento setup:install` with parameters from `.env`, configures Redis/RabbitMQ, runs `setup:upgrade`, `di:compile`, `static-content:deploy`, reindexes, clears caches and creates the admin user.
-- Adjusts ownership and permissions on Magento files (chown, chmod) and restarts Nginx and Varnish.
+- 从`docker/.env`加载变量。
+- 构建在`docker/php-fpm/Dockerfile`中定义的自定义PHP-FPM镜像（标签`magento-php:8.4-custom`）。
+- 使用`docker compose -f docker/docker-compose.shared.yml up -d`启动共享服务。
+- 在`magento-store`容器内执行命令：`composer install`、带有`.env`中参数的`bin/magento setup:install`、配置Redis/RabbitMQ、运行`setup:upgrade`、`di:compile`、`static-content:deploy`、重新索引、清除缓存并创建管理员用户。
+- 调整Magento文件的所有权和权限（chown、chmod）并重启Nginx和Varnish。
 
-To use the script:
+使用脚本：
 
-1. Make the script executable (if needed):
+1. 使脚本可执行（如果需要）：
 
 ```bash
 chmod +x bash/install.sh
-```
-
-2. Run it:
-
-```bash
-./bash/install.sh
-```
-
-The script will ask for confirmation before proceeding.
-
-## Services description
-
-- mysql: official `mysql:8.0` image. Database persisted under `docker/mysql/data`.
-- nginx: nginx mainline with custom configuration in `docker/nginx`.
-- redis: used for session and cache (image `redis:6.2-alpine`).
-- elasticsearch: search service (image `docker.elastic.co/elasticsearch/elasticsearch:7.17.9`).
-- rabbitmq: messaging (image `rabbitmq:3-management`) with management UI on port 15672.
-- varnish: HTTP cache, mapped to host port 80 and using `docker/varnish/default.vcl`.
-- nginx-proxy: Nginx Proxy Manager to manage hosts and certificates (ports 81/443 mapped locally).
-- store: built from `docker/php-fpm`, mounts Magento code into `/var/www/store` and acts as the application container.
-
-Each service is attached to the `magento-net` (bridge) network and many mount local volumes for persistence.
-
-## PHP-FPM Dockerfile summary
-
-The Dockerfile at `docker/php-fpm/Dockerfile` uses `php:8.2-fpm` as a base and installs PHP extensions and system dependencies required to run Magento 2, such as `pdo_mysql`, `gd`, `zip`, `opcache`, `bcmath`, `intl`, `soap`, and more. It also installs Composer and copies an `entrypoint.sh` to manage cron and PHP-FPM.
-
-Important: the build step in `bash/install.sh` references this Dockerfile and creates the image `magento-php:8.4-custom`.
-
-## Best practices and permissions
-
-- The `install.sh` script sets `www-data:www-data` ownership for Magento files and applies `644`/`755` for files/directories respectively. On local development environments you may prefer to set ownership to your user to avoid permission issues when editing files on the host.
-- Do not use default passwords in production. Configure TLS certificates and production-grade settings in Nginx/Proxy and limit exposed ports.
-
-## Backups and persistence
-
-- MySQL data lives under `docker/mysql/data` (local volume). Regularly back up the database using `mysqldump` or snapshot tools; prefer logical dumps (`mysqldump`) for consistency.
-- Elasticsearch, Redis and other services also have local data; adapt snapshot and backup routines as needed for your environment.
