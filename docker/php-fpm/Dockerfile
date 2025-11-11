@@ -46,10 +46,10 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 # 直接从阿里云下载 composer.phar 并验证
-RUN curl -sS -o /usr/local/bin/composer https://mirrors.tencent.com/composer/composer.phar && \
+RUN curl -sS --http1.1 -o /usr/local/bin/composer https://mirrors.aliyun.com/composer/composer.phar && \
     chmod +x /usr/local/bin/composer && \
     composer --version && \
-    composer config -g repo.packagist composer https://mirrors.tencent.com/composer/
+    composer config -g repo.packagist composer https://mirrors.aliyun.com/composer/
 
 COPY ./config/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
