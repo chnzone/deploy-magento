@@ -25,7 +25,7 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
       - ./nginx/module-enabled:/etc/nginx/module-enabled
-      - ../instance/store/magento:/var/www/store
+      - ../source/store/magento:/var/www/store
     networks:
       - magento-net
   redis:
@@ -98,7 +98,7 @@ services:
     container_name: magento-store
     restart: unless-stopped
     volumes:
-      - ../instance/store/magento:/var/www/store
+      - ../source/store/magento:/var/www/store
       - ./php-fpm/conf.d/php.ini:/usr/local/etc/php/conf.d/php.ini
     working_dir: /var/www/store
     networks:
