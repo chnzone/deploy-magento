@@ -197,7 +197,7 @@ check_or_download_magento() {
             
             # 国内镜像列表（按优先级排序）
             MAGENTO_TAR_URLS=(
-                "https://git.zt8.net/https://github.com/magento/magento2/archive/refs/tags/$MAGENTO_VERSION.tar.gz"
+                "https://gh-proxy.com/https://github.com/magento/magento2/archive/refs/tags/$MAGENTO_VERSION.tar.gz"
                 "https://gitcode.net/mirrors/magento/magento2/-/archive/$MAGENTO_VERSION/magento2-$MAGENTO_VERSION.tar.gz"  # GitCode镜像
                 "https://github.com/magento/magento2/archive/refs/tags/$MAGENTO_VERSION.tar.gz"  # 官方源（备用）
             )
