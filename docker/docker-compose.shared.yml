@@ -53,7 +53,7 @@ services:
     container_name: magento-rabbitmq
     restart: unless-stopped
     ports:
-      - "15672:15672" # Interface web de administração
+      - "15672:15672" # 管理界面
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASSWORD}
