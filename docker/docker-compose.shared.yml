@@ -76,22 +76,22 @@ services:
       - nginx
     networks:
       - magento-net
-  nginx-proxy:
-    image: 'jc21/nginx-proxy-manager:latest'
-    restart: unless-stopped
-    ports:
-      - '81:81'
-      - '443:443'
-    volumes:
-      - ./nginx-proxy/data:/data
-      - ./nginx-proxy/letsencrypt:/etc/letsencrypt
-    container_name: magento-nginx-proxy
-    environment:
-      INITIAL_ADMIN_EMAIL: ${NGINX_PROXY_ADMIN_USER_EMAIL}
-      INITIAL_ADMIN_PASSWORD: ${NGINX_PROXY_MANAGER_ADMIN_PASSWORD}
-      DISABLE_IPV6: 'true'
-    networks:
-      - magento-net
+  #nginx-proxy:
+  #  image: 'jc21/nginx-proxy-manager:latest'
+  #  restart: unless-stopped
+  #  ports:
+  #    - '81:81'
+  #    - '443:443'
+  #  volumes:
+  #    - ./nginx-proxy/data:/data
+  #    - ./nginx-proxy/letsencrypt:/etc/letsencrypt
+  #  container_name: magento-nginx-proxy
+  #  environment:
+  #    INITIAL_ADMIN_EMAIL: ${NGINX_PROXY_ADMIN_USER_EMAIL}
+  #    INITIAL_ADMIN_PASSWORD: ${NGINX_PROXY_MANAGER_ADMIN_PASSWORD}
+  #    DISABLE_IPV6: 'true'
+  #  networks:
+  #    - magento-net
   store:
     build:
       context: ./php-fpm
