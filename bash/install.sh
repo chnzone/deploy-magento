@@ -10,8 +10,44 @@ DOCKER_COMPOSE_SHARED_FILE="$PROJECT_ROOT/docker/docker-compose.shared.yml"
 DOCKERFILE_PHP_FPM_FILE="$PROJECT_ROOT/docker/php-fpm/Dockerfile"
 MAGENTO_PATH="$PROJECT_ROOT/source/store/magento"
 ENV_FILE="$PROJECT_ROOT/docker/.env"
+MAGENTO_VERSION="2.4.6-p8"  # 与composer.json版本匹配
+AUTH_JSON_PATH="$PROJECT_ROOT/source/store/magento/auth.json"  # 认证文件路径
 
-# 检查必要文件是否存在
+# 检查并安装PHP（Composer依赖）
+install_php_if_missing() {
+    echo -e "${GREEN}检查PHP是否安装...${NC}"
+    if ! command -v php &> /dev/null; then
+        echo -e "${YELLOW}未检测到PHP，开始安装PHP-cli（Composer依赖）...${NC}"
+        
+        # 检测是否有sudo或是否为root
+        check_sudo_availability
+        local SUDO_CMD=$SUDO_AVAILABLE
+
+        # Debian/Ubuntu系统安装PHP
+        $SUDO_CMD apt update -y
+        $SUDO_CMD apt install -y php-cli php-json php-mbstring php-curl php-xml  # 增加xml扩展
+        
+        # 验证安装
+        if ! command -v php &> /dev/null; then
+            echo -e "${RED}错误：PHP安装失败，请手动安装PHP后重试${NC}"
+            exit 1
+        fi
+        echo -e "${GREEN}PHP安装成功${NC}"
+    else
+        echo -e "${GREEN}已检测到PHP，跳过安装${NC}"
+    fi
+}
+
+# 检查sudo是否可用（全局函数）
+check_sudo_availability() {
+    if command -v sudo &> /dev/null && [ "$(id -u)" -ne 0 ]; then
+        SUDO_AVAILABLE="sudo"  # 非root且有sudo
+    else
+        SUDO_AVAILABLE=""  # root用户或无sudo
+    fi
+}
+
+# 检查必要文件（不含auth.json，单独处理）
 check_required_files() {
     local missing_files=()
     
@@ -36,6 +72,32 @@ check_required_files() {
     fi
 }
 
+# 验证auth.json是否包含有效的repo.magento.com凭据
+validate_auth_json() {
+    # 检查文件是否存在
+    if [ ! -f "$AUTH_JSON_PATH" ]; then
+        echo -e "${YELLOW}未检测到auth.json文件，无法使用Composer方案${NC}"
+        return 1  # 凭据无效
+    fi
+
+    # 检查文件是否包含repo.magento.com配置
+    if ! grep -q "repo.magento.com" "$AUTH_JSON_PATH"; then
+        echo -e "${YELLOW}auth.json中未找到repo.magento.com配置，无法使用Composer方案${NC}"
+        return 1  # 凭据无效
+    fi
+
+    # 检查username和password是否被填充（非占位符）
+    # 不依赖jq，使用基础文本匹配避免jq缺失问题
+    if grep -q "<公钥>" "$AUTH_JSON_PATH" || grep -q "<私钥>" "$AUTH_JSON_PATH"; then
+        echo -e "${YELLOW}auth.json中repo.magento.com的公钥/私钥未填写，无法使用Composer方案${NC}"
+        return 1  # 凭据无效
+    fi
+
+    # 所有检查通过
+    echo -e "${GREEN}auth.json验证通过，可使用Composer方案${NC}"
+    return 0  # 凭据有效
+}
+
 # 加载环境变量
 load_env_variables() {
     if [ -f "$ENV_FILE" ]; then
@@ -49,38 +111,145 @@ load_env_variables() {
     fi
 }
 
-# 检查Magento源码是否存在，不存在则下载
+# 清理目录（保留目录但清空内容）
+clean_magento_dir() {
+    if [ -d "$MAGENTO_PATH" ]; then
+        echo -e "${YELLOW}清理非空目录 $MAGENTO_PATH 中的内容...${NC}"
+        # 保留目录但删除所有内容（包括隐藏文件）
+        rm -rf "$MAGENTO_PATH"/* "$MAGENTO_PATH"/.[!.]* "$MAGENTO_PATH"/..?* 2>/dev/null
+    fi
+}
+
+# 检测下载的tar文件是否有效
+is_valid_tar_gz() {
+    local file="$1"
+    # 检查文件大小（至少10MB，防止空文件或错误页面）
+    if [ $(stat -c%s "$file") -lt 10485760 ]; then  # 10MB=10*1024*1024
+        return 1
+    fi
+    # 检查文件头部是否为gzip格式（gzip文件头部为0x1f8b）
+    if ! head -c 2 "$file" | hexdump -C | grep -q "1f 8b"; then
+        return 1
+    fi
+    return 0
+}
+
+# 检测composer.json是否存在，不存在则自动下载源码
 check_or_download_magento() {
-    if [ ! -d "$MAGENTO_PATH" ] || [ -z "$(ls -A "$MAGENTO_PATH")" ]; then
-        echo -e "${YELLOW}未检测到Magento源码，准备下载...${NC}"
+    # 检查源码目录是否存在且包含composer.json
+    if [ ! -d "$MAGENTO_PATH" ] || [ ! -f "$MAGENTO_PATH/composer.json" ]; then
+        echo -e "${YELLOW}未检测到完整的Magento源码，准备下载版本 $MAGENTO_VERSION...${NC}"
         
-        # 创建目录
+        # 创建源码目录（若不存在）
         mkdir -p "$MAGENTO_PATH"
-        
-        # 国内镜像源下载Magento源码
-        MAGENTO_VERSION="2.4.6-p8"
-        MAGENTO_DOWNLOAD_URL="https://github.com/magento/magento2/archive/refs/tags/$MAGENTO_VERSION.tar.gz"
-        
-        echo -e "${GREEN}从 $MAGENTO_DOWNLOAD_URL 下载Magento $MAGENTO_VERSION...${NC}"
-        if ! curl -L --retry 3 --output "$PROJECT_ROOT/magento.tar.gz" "$MAGENTO_DOWNLOAD_URL"; then
-            echo -e "${RED}下载失败，尝试使用国内镜像...${NC}"
-            # 使用GitHub镜像站
-            MAGENTO_DOWNLOAD_URL="https://hub.fastgit.xyz/magento/magento2/archive/refs/tags/$MAGENTO_VERSION.tar.gz"
-            if ! curl -L --retry 3 --output "$PROJECT_ROOT/magento.tar.gz" "$MAGENTO_DOWNLOAD_URL"; then
-                echo -e "${RED}镜像下载也失败，请手动下载并放置到 $MAGENTO_PATH${NC}"
-                exit 1
+        if [ $? -ne 0 ]; then
+            echo -e "${RED}错误：无法创建Magento源码目录 $MAGENTO_PATH${NC}"
+            exit 1
+        fi
+
+        # 清理目录（解决"目录非空"问题）
+        clean_magento_dir
+
+        # 验证auth.json凭据是否有效
+        local use_composer=0
+        if validate_auth_json; then
+            use_composer=1
+        else
+            use_composer=0
+        fi
+
+        # 方案1：仅当凭据有效时使用Composer下载
+        if [ $use_composer -eq 1 ]; then
+            # 检查并安装Composer
+            echo -e "${GREEN}检查Composer是否安装...${NC}"
+            if command -v composer &> /dev/null; then
+                COMPOSER_CMD="composer"
+            else
+                # 临时安装Composer（依赖已安装的PHP）
+                echo -e "${YELLOW}未检测到Composer，开始临时安装...${NC}"
+                curl -sS --http1.1 https://mirrors.aliyun.com/composer/composer.phar -o /tmp/composer.phar
+                chmod +x /tmp/composer.phar
+                COMPOSER_CMD="/tmp/composer.phar"
+                
+                # 验证Composer是否可用
+                if ! $COMPOSER_CMD --version &> /dev/null; then
+                    echo -e "${YELLOW}Composer安装失败，切换到GitHub镜像方案${NC}"
+                    use_composer=0
+                fi
+            fi
+
+            # 尝试Composer下载
+            if [ $use_composer -eq 1 ]; then
+                # 配置国内Composer镜像加速
+                $COMPOSER_CMD config -g repo.packagist composer https://mirrors.aliyun.com/composer/
+
+                echo -e "${GREEN}尝试通过Composer创建项目...${NC}"
+                if ! $COMPOSER_CMD create-project --no-install magento/project-community-edition="$MAGENTO_VERSION" "$MAGENTO_PATH" --no-interaction; then
+                    echo -e "${YELLOW}Composer下载失败，切换到GitHub镜像方案${NC}"
+                    use_composer=0
+                fi
             fi
         fi
-        
-        # 解压源码
-        echo -e "${GREEN}解压Magento源码...${NC}"
-        tar -zxf "$PROJECT_ROOT/magento.tar.gz" -C "$PROJECT_ROOT"
-        mv "$PROJECT_ROOT/magento2-$MAGENTO_VERSION"/* "$MAGENTO_PATH/"
-        rm -rf "$PROJECT_ROOT/magento.tar.gz" "$PROJECT_ROOT/magento2-$MAGENTO_VERSION"
-        
+
+        # 方案2：当Composer不可用或失败时，使用GitHub镜像下载
+        if [ $use_composer -eq 0 ]; then
+            echo -e "${YELLOW}使用GitHub镜像方案下载源码...${NC}"
+            
+            # 国内镜像列表（按优先级排序）
+            MAGENTO_TAR_URLS=(
+                "https://git.zt8.net/https://github.com/magento/magento2/archive/refs/tags/$MAGENTO_VERSION.tar.gz"
+                "https://gitcode.net/mirrors/magento/magento2/-/archive/$MAGENTO_VERSION/magento2-$MAGENTO_VERSION.tar.gz"  # GitCode镜像
+                "https://github.com/magento/magento2/archive/refs/tags/$MAGENTO_VERSION.tar.gz"  # 官方源（备用）
+            )
+            TEMP_TAR="$PROJECT_ROOT/magento_temp.tar.gz"
+            local download_success=0
+
+            # 循环尝试镜像源
+            for url in "${MAGENTO_TAR_URLS[@]}"; do
+                echo -e "${YELLOW}尝试从 $url 下载...${NC}"
+                # 清理之前的错误文件
+                rm -f "$TEMP_TAR"
+                # 下载源码包（增加超时和重试）
+                if curl -L --http1.1 --retry 3 --connect-timeout 30 --output "$TEMP_TAR" "$url"; then
+                    # 校验文件有效性
+                    if is_valid_tar_gz "$TEMP_TAR"; then
+                        echo -e "${GREEN}从 $url 下载成功！${NC}"
+                        download_success=1
+                        break
+                    else
+                        echo -e "${YELLOW}$url 下载的文件无效，尝试下一个镜像...${NC}"
+                    fi
+                else
+                    echo -e "${YELLOW}$url 下载失败，尝试下一个镜像...${NC}"
+                fi
+            done
+
+            # 所有镜像都失败
+            if [ $download_success -eq 0 ]; then
+                echo -e "${RED}所有镜像源下载失败，请手动下载以下文件并放置到 $PROJECT_ROOT 后重试：${NC}"
+                echo "  https://github.com/magento/magento2/archive/refs/tags/$MAGENTO_VERSION.tar.gz"
+                exit 1
+            fi
+
+            # 解压源码
+            echo -e "${GREEN}解压源码包...${NC}"
+            mkdir -p "$PROJECT_ROOT/temp_magento"
+            if ! tar -zxf "$TEMP_TAR" -C "$PROJECT_ROOT/temp_magento"; then
+                echo -e "${RED}解压失败，文件可能损坏，请手动解压${NC}"
+                exit 1
+            fi
+            # 移动源码到目标目录（处理可能的目录名差异）
+            mv "$PROJECT_ROOT/temp_magento"/*/* "$MAGENTO_PATH/"  # 适配不同镜像的目录结构
+            rm -rf "$TEMP_TAR" "$PROJECT_ROOT/temp_magento"
+        fi
+
+        # 如果auth.json存在，复制到源码目录（无论哪种方案）
+        if [ -f "$AUTH_JSON_PATH" ]; then
+            cp "$AUTH_JSON_PATH" "$MAGENTO_PATH/auth.json"
+        fi
         echo -e "${GREEN}Magento源码准备完成${NC}"
     else
-        echo -e "${GREEN}检测到已存在Magento源码，跳过下载${NC}"
+        echo -e "${GREEN}检测到已存在完整的Magento源码，跳过下载${NC}"
     fi
 }
 
@@ -114,40 +283,51 @@ if [[ ! "$response" =~ ^(是|y|Y|yes|Yes)$ ]]; then
     exit 1
 fi
 
-# 检查必要文件
+# 检查sudo是否可用（全局变量SUDO_AVAILABLE）
+check_sudo_availability
+
+# 检查并安装PHP（解决Composer依赖）
+install_php_if_missing
+
+# 检查必要文件（不含auth.json，单独处理）
 check_required_files
 
 # 加载环境变量
 load_env_variables
 
-# 检查或下载Magento源码
+# 检测并自动下载Magento源码（根据auth.json状态选择方案）
 check_or_download_magento
 
-# 配置国内Docker镜像加速
+# 配置国内Docker镜像加速（适配无sudo环境）
 configure_docker_mirror() {
     echo -e "${GREEN}配置Docker国内镜像加速...${NC}"
     DOCKER_DAEMON_JSON="/etc/docker/daemon.json"
-    if [ -f "$DOCKER_DAEMON_JSON" ]; then
-        if ! grep -q "registry-mirrors" "$DOCKER_DAEMON_JSON"; then
-            jq '. += {"registry-mirrors": ["https://docker.mirrors.ustc.edu.cn", "https://hub-mirror.c.163.com", "https://mirror.baidubce.com"]}' "$DOCKER_DAEMON_JSON" > "$DOCKER_DAEMON_JSON.tmp" && mv "$DOCKER_DAEMON_JSON.tmp" "$DOCKER_DAEMON_JSON"
-            systemctl restart docker
-        fi
-    else
-        sudo tee "$DOCKER_DAEMON_JSON" <<EOF
+    # 仅在有足够权限时配置（root或有sudo）
+    if [ -n "$SUDO_AVAILABLE" ] || [ "$(id -u)" -eq 0 ]; then
+        if [ -f "$DOCKER_DAEMON_JSON" ]; then
+            if ! grep -q "registry-mirrors" "$DOCKER_DAEMON_JSON"; then
+                # 不依赖jq，避免jq缺失问题
+                echo -e "${YELLOW}手动添加Docker镜像加速配置...${NC}"
+                $SUDO_AVAILABLE sed -i '$ d' "$DOCKER_DAEMON_JSON"  # 删除最后一行
+                $SUDO_AVAILABLE echo '  "registry-mirrors": ["https://docker.mirrors.ustc.edu.cn", "https://hub-mirror.c.163.com", "https://mirror.baidubce.com"]' >> "$DOCKER_DAEMON_JSON"
+                $SUDO_AVAILABLE echo '}' >> "$DOCKER_DAEMON_JSON"
+                $SUDO_AVAILABLE systemctl restart docker
+            fi
+        else
+            $SUDO_AVAILABLE tee "$DOCKER_DAEMON_JSON" <<EOF
 {
   "registry-mirrors": ["https://docker.mirrors.ustc.edu.cn", "https://hub-mirror.c.163.com", "https://mirror.baidubce.com"]
 }
 EOF
-        systemctl restart docker
+            $SUDO_AVAILABLE systemctl restart docker
+        fi
+    else
+        echo -e "${YELLOW}无权限配置Docker镜像加速，可能影响下载速度${NC}"
     fi
 }
 
-# 尝试配置Docker镜像加速（需要root权限）
-if [ "$(id -u)" -eq 0 ]; then
-    configure_docker_mirror
-else
-    echo -e "${YELLOW}非root用户，跳过Docker镜像配置，建议手动配置以提高下载速度${NC}"
-fi
+# 尝试配置Docker镜像加速
+configure_docker_mirror
 
 # 构建PHP-FPM镜像，使用国内源
 echo -e "${GREEN}构建PHP-FPM镜像，使用国内源...${NC}"
@@ -178,7 +358,7 @@ done
 echo -e "🔧 ${GREEN}开始在magento-store容器内安装商店... ${NC}"
 docker exec -it $DOCKER_CONTAINER_NAME bash -c "
   # 配置Composer国内源
-  composer config -g repo.packagist composer https://packagist.phpcomposer.com
+  composer config -g repo.packagist composer https://mirrors.aliyun.com/composer/
   
   cd $DOCKER_MAGENTO_DIR && \
   composer install -n && \
@@ -219,8 +399,9 @@ docker exec -it $DOCKER_CONTAINER_NAME bash -c "
     --amqp-virtualhost=/ 
 "
 
-echo -e "✅ ${GREEN}在Magento文件中添加www-data组。${NC}"
+echo -e "✅ ${GREEN}执行Magento配置命令...${NC}"
 docker exec -it $DOCKER_CONTAINER_NAME bash -c "
+  cd $DOCKER_MAGENTO_DIR && \
   php bin/magento setup:upgrade && \
   php bin/magento setup:di:compile && \
   php bin/magento setup:static-content:deploy -f && \
@@ -229,32 +410,40 @@ docker exec -it $DOCKER_CONTAINER_NAME bash -c "
   php bin/magento cache:flush
 "
 
-echo -e "✅ ${GREEN}安装Cron... ${NC}"
+echo -e "✅ ${GREEN}安装Cron任务... ${NC}"
 docker exec -it $DOCKER_CONTAINER_NAME bash -c "
+  cd $DOCKER_MAGENTO_DIR && \
   php bin/magento cron:remove && \
   php bin/magento cron:install && \
   php bin/magento cron:run
 "
 
-echo -e "✅ ${GREEN}在Magento文件中添加www-data组。${NC}"
-# 检查并设置适当的权限
+echo -e "✅ ${GREEN}设置Magento文件权限...${NC}"
+# 适配无sudo环境的权限设置
 if [ "$(uname)" = "Linux" ]; then
-    sudo chown -R www-data:www-data "$MAGENTO_PATH"
+    # 检查是否有足够权限修改所有者（root或www-data）
+    if [ -n "$SUDO_AVAILABLE" ] || [ "$(id -u)" -eq 0 ]; then
+        $SUDO_AVAILABLE chown -R www-data:www-data "$MAGENTO_PATH"
+    else
+        echo -e "${YELLOW}无权限修改文件所有者，尝试仅设置权限位...${NC}"
+    fi
 else
-    # 非Linux系统可能不需要www-data用户
+    # 非Linux系统
     chmod -R 775 "$MAGENTO_PATH"
 fi
 
-echo -e "✅ ${GREEN}为Magento文件夹和文件添加权限。${NC}"
-find "$MAGENTO_PATH" -type f -exec chmod 644 {} \;
-find "$MAGENTO_PATH" -type d -exec chmod 755 {} \;
+# 细化权限设置（不依赖sudo，确保当前用户可执行）
+find "$MAGENTO_PATH" -type f -exec chmod 644 {} \; 2>/dev/null
+find "$MAGENTO_PATH" -type d -exec chmod 755 {} \; 2>/dev/null
+chmod -R 777 "$MAGENTO_PATH/var" "$MAGENTO_PATH/generated" "$MAGENTO_PATH/pub/media" "$MAGENTO_PATH/pub/static" 2>/dev/null
 
-echo -e "✅ ${GREEN}清除缓存 ${NC}"
+echo -e "✅ ${GREEN}重启相关服务清除缓存...${NC}"
 docker restart magento-nginx
 docker restart magento-varnish
 
-echo -e "✅ ${GREEN}为Magento创建管理员用户${NC}"
+echo -e "✅ ${GREEN}创建Magento管理员用户...${NC}"
 docker exec -it $DOCKER_CONTAINER_NAME bash -c "
+  cd $DOCKER_MAGENTO_DIR && \
   php bin/magento admin:user:create \
     --admin-user=$MAGENTO_ADMIN_USER \
     --admin-password=$MAGENTO_ADMIN_PASSWORD \
@@ -264,3 +453,4 @@ docker exec -it $DOCKER_CONTAINER_NAME bash -c "
 "
 
 echo -e "${GREEN}✅ 安装完成！您可以通过 $MAGENTO_HOST:$MAGENTO_PORT 访问您的Magento商店${NC}"
+echo -e "${GREEN}管理员地址：$MAGENTO_HOST:$MAGENTO_PORT/admin${NC}"
