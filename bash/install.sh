@@ -363,7 +363,8 @@ docker exec -it $DOCKER_CONTAINER_NAME bash -c "
   cd $DOCKER_MAGENTO_DIR && \
   composer install -n && \
   php -d memory_limit=-1 bin/magento setup:install \
-    --base-url=$MAGENTO_HOST:$MAGENTO_PORT \
+    --base-url=$MAGENTO_SHOPURI \
+    --backend-frontname=$BACKEND_FRONTNAME \
     --db-host=$DOCKER_MYSQL_NAME \
     --db-name=$MYSQL_DATABASE \
     --db-user=$MYSQL_USER \
