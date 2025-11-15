@@ -330,7 +330,7 @@ run_upgrade_commands() {
     echo -e "${GREEN}执行升级命令...${NC}"
     docker exec -it "$DOCKER_CONTAINER_NAME" bash -c "
         cd $DOCKER_MAGENTO_DIR && \
-        composer config -g repo.packagist composer https://mirrors.aliyun.com/composer/ && \
+        composer config -g repo.packagist composer https://packagist.phpcomposer.com && \
         composer install --no-interaction && \
         php -d memory_limit=-1 bin/magento maintenance:enable && \
         php -d memory_limit=-1 bin/magento setup:upgrade && \
