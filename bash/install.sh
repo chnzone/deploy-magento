@@ -358,7 +358,7 @@ done
 echo -e "🔧 ${GREEN}开始在magento-store容器内安装商店... ${NC}"
 docker exec -it $DOCKER_CONTAINER_NAME bash -c "
   # 配置Composer国内源
-  composer config -g repo.packagist composer https://mirrors.aliyun.com/composer/
+  composer config -g repo.packagist composer https://packagist.phpcomposer.com
   
   cd $DOCKER_MAGENTO_DIR && \
   composer install -n && \
